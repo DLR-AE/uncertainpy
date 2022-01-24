@@ -119,7 +119,8 @@ class DataFeature(collections.MutableMapping):
                  sobol_first_average=None,
                  sobol_total=None,
                  sobol_total_average=None,
-                 labels=[]):
+                 labels=[],
+                 nodes=None):
 
         self.name = name
         self.evaluations = evaluations
@@ -133,11 +134,11 @@ class DataFeature(collections.MutableMapping):
         self.sobol_total = sobol_total
         self.sobol_total_average = sobol_total_average
         self.labels = labels
-
+        self.nodes = nodes
         self._statistical_metrics = ["evaluations", "time", "mean", "variance",
                                      "percentile_5", "percentile_95",
                                      "sobol_first", "sobol_first_average",
-                                     "sobol_total", "sobol_total_average"]
+                                     "sobol_total", "sobol_total_average", "nodes"]
 
         self._information = ["name", "labels"]
 

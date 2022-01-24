@@ -645,6 +645,19 @@ class UncertaintyCalculations(ParameterBase):
             if (np.all(mask) or allow_incomplete) and sum(mask) > 0:
                 U_hat[feature] = cp.fit_regression(P, masked_nodes,
                                                    masked_evaluations)
+                data[feature].nodes = masked_nodes
+                if masked_nodes.ndim==1:
+                    data[feature].evaluations_hat = U_hat[feature](*[masked_nodes])
+                else:
+                    data[feature].evaluations_hat = U_hat[feature](*masked_nodes)
+                data[feature].evaluations_loo = self.leave_one_out_analysis(P, masked_nodes, masked_evaluations)
+                data[feature].RMSD_evaluations, data[feature].NRMSD_evaluations, \
+                data[feature].MAE_evaluations = self.compute_rmsd_nrmsd_mae(data[feature].evaluations_hat.T,
+                                                                            data[feature].evaluations)
+                data[feature].RMSD_loo, data[feature].NRMSD_loo, \
+                data[feature].MAE_loo = self.compute_rmsd_nrmsd_mae(data[feature].evaluations_loo,
+                                                                    data[feature].evaluations)
+
             elif not allow_incomplete:
                 logger.warning("{}: not all parameter combinations give results.".format(feature) +
                                " No uncertainty quantification is performed since allow_incomplete=False")
@@ -658,6 +671,60 @@ class UncertaintyCalculations(ParameterBase):
 
         return U_hat, distribution, data
 
+    def leave_one_out_analysis(self, P, nodes, evaluations):
+        """
+        Leave-one-out analysis on evaluations for polynomial definition P
+
+        Parameters
+        ----------
+        P : chaospy polynomial object
+        nodes : nd.array
+            coordinates in multi-D space where evaluations have been made
+        evaluations : list
+            training data observed at nodes
+
+        Returns
+        -------
+        evaluations_loo : list
+            Leave-one-out polynomial evaluations at nodes positions
+        """
+        evaluations_loo = []
+        for i, node in enumerate(nodes.T):
+            loo_evaluations = evaluations[:i] + evaluations[i+1:]
+            loo_nodes = np.delete(nodes, i, -1)
+            U_loo = cp.fit_regression(P, loo_nodes, loo_evaluations)
+            if type(node)==float or type(node)==np.float64:
+                evaluations_loo.append(U_loo(*[node]))
+            else:
+                evaluations_loo.append(U_loo(*node))
+        return evaluations_loo
+
+    def compute_rmsd_nrmsd_mae(self, y_est, y_true):
+        """
+        Compute RMSD, NRMSD (normalised by y_true range) and MAE (mean absolute error)
+
+        Parameters
+        ----------
+        y_est : list, nd.array
+            Estimator values for variable y
+        y_true : list, nd.array
+            True values for variable y
+
+        Returns
+        -------
+        rmsd : float
+            Root-mean-square deviation = sqrt(E((y_est-y_true)^2))
+        nrmsd : float
+            Range normalised root-mean-square deviation = nrmsd / ( max(y_true) - min(y_true))
+        mae : float
+            Mean absolute error = E(abs(y_est-y_true))
+        """
+        y_est = np.array(y_est)
+        y_true = np.array(y_true)
+        rmsd = (sum((y_est - y_true) ** 2) / len(y_true)) ** 0.5
+        nrmsd = 100 * rmsd / (np.max(y_true) - np.min(y_true))
+        mae = sum(abs(y_est-y_true)) / len(y_true)
+        return rmsd, nrmsd, mae
 
     def create_PCE_spectral_rosenblatt(self,
                                        uncertain_parameters=None,
@@ -1046,10 +1113,9 @@ class UncertaintyCalculations(ParameterBase):
 
                 data[feature].percentile_5 = np.percentile(U_mc[feature], 5, -1)
                 data[feature].percentile_95 = np.percentile(U_mc[feature], 95, -1)
+                data[feature].surrogate_model = U_hat[feature]
 
         return data
-
-
 
     @property
     def create_PCE_custom(self, uncertain_parameters=None, **kwargs):
@@ -1384,7 +1450,7 @@ class UncertaintyCalculations(ParameterBase):
 
         data.seed = seed
 
-        return data
+        return data, U_hat, distribution
 
 
     def monte_carlo(self,

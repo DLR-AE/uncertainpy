@@ -412,7 +412,7 @@ class UncertaintyQuantification(ParameterBase):
                                                     **custom_kwargs)
 
             else:
-                data = self.polynomial_chaos(uncertain_parameters=uncertain_parameters,
+                data, U_hat, distribution = self.polynomial_chaos(uncertain_parameters=uncertain_parameters,
                                              method=pc_method,
                                              rosenblatt=rosenblatt,
                                              polynomial_order=polynomial_order,
@@ -466,7 +466,7 @@ class UncertaintyQuantification(ParameterBase):
         else:
             raise ValueError("No method with name {}".format(method))
 
-        return data
+        return data, U_hat, distribution
 
 
     def custom_uncertainty_quantification(self,
@@ -699,7 +699,7 @@ class UncertaintyQuantification(ParameterBase):
                                  + "The Monte-Carlo method might be faster.")
 
 
-        self.data = self.uncertainty_calculations.polynomial_chaos(
+        self.data, U_hat, distribution = self.uncertainty_calculations.polynomial_chaos(
             method=method,
             rosenblatt=rosenblatt,
             uncertain_parameters=uncertain_parameters,
@@ -724,7 +724,7 @@ class UncertaintyQuantification(ParameterBase):
                   folder=figure_folder,
                   figureformat=figureformat)
 
-        return self.data
+        return self.data, U_hat, distribution
 
 
     def monte_carlo(self,
