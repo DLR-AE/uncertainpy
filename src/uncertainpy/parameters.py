@@ -145,7 +145,7 @@ class Parameter(object):
 
 
 
-class Parameters(collections.MutableMapping):
+class Parameters(collections.abc.MutableMapping):
     """
     A collection of parameters.
 
