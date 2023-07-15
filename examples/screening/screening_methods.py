@@ -1,7 +1,6 @@
 import uncertainpy as un
 import chaospy as cp
 import numpy as np
-import chaospy as cp
 
 import statistics
 from scipy.stats import qmc
@@ -185,30 +184,44 @@ def morris_screening(self, **kwargs):
     nr_params = len(uncertain_params)
     sampler = qmc.Sobol(d=nr_params)
     sample = sampler.random(n=nr_of_repetitions*2)
+    # -> array with :nr_of_repetitions of the reference coordinates and nr_of_repetitions: values as disturbance
 
-    linear_disturbances = True
-    if linear_disturbances is True:
-        sample[nr_of_repetitions:] = sample[:nr_of_repetitions] + 1E-9 * sample[nr_of_repetitions:]
+    # if linear disturbances are preferred, the nr_of_repetitions: samples are modified
+    if kwargs['linear_disturbance'] is True:
+        sample[nr_of_repetitions:] = sample[:nr_of_repetitions] + \
+                                     kwargs['linear_disturbance_factor'] * sample[nr_of_repetitions:]
 
-    nodes = np.repeat(sample[:nr_of_repetitions], nr_params+1, axis=0)
-
+    # build the normalized_nodes array, which will has following format:
+    # row 1: unmodified reference coordinates 1
+    # row 2: disturbed reference coordinate 1, unmodified reference coordinates 1 for all other parameters
+    # row 3: disturbed reference coordinate 2, unmodified reference coordinates 1 for all other parameters
+    # ...
+    # row nr_parameters+1: unmodified reference coordinates 2
+    # row nr_parameters+2: disturbed reference coordinate 1, unmodified reference coordinates 2 for all other parameters
+    # ...
+    normalized_nodes = np.repeat(sample[:nr_of_repetitions], nr_params+1, axis=0)
     for repetition_idx, b_values in enumerate(sample[nr_of_repetitions:, :]):
-        np.fill_diagonal(nodes[repetition_idx * (nr_params+1) + 1:
-                               (repetition_idx+1) * (nr_params+1), :], b_values)
+        np.fill_diagonal(normalized_nodes[repetition_idx * (nr_params+1) + 1:
+                                          (repetition_idx+1) * (nr_params+1), :], b_values)
 
+    # scale the nodes with the input distributions
+    normalized_nodes = normalized_nodes.T
+    nodes = np.zeros(normalized_nodes.shape)
     distr_ranges = [[distr.lower[0], distr.upper[0]] for distr in all_distributions]
     for idx, distr_range in enumerate(distr_ranges):
-        nodes[:, idx] = distr_range[0] + (distr_range[1]-distr_range[0]) * nodes[:, idx]
-    nodes = nodes.T
+        nodes[idx, :] = distr_range[0] + (distr_range[1]-distr_range[0]) * normalized_nodes[idx, :]
 
+    # run the simulations
     data = self.runmodel.run(nodes, uncertain_params)
 
     ee = np.zeros((nr_params, nr_of_repetitions))
     evaluations = np.array(data.data[data.model_name].evaluations)
 
     for repetition in range(nr_of_repetitions):
+        # evaluation difference between disturbed and reference computation
         y_delta = evaluations[repetition * (nr_params+1) + 1: (repetition+1) * (nr_params+1)] - evaluations[repetition * (nr_params+1)]
-        x_delta = nodes[:, repetition * (nr_params+1) + 1: (repetition+1) * (nr_params+1)] - nodes[:, [repetition * (nr_params+1)]]
+        # normalized input disturbance
+        x_delta = normalized_nodes[:, repetition * (nr_params+1) + 1: (repetition+1) * (nr_params+1)] - normalized_nodes[:, [repetition * (nr_params+1)]]
         ee[:, repetition] = y_delta / x_delta.sum(axis=0)
 
     data.data[data.model_name].ee = ee
@@ -236,15 +249,16 @@ def morris_screening(self, **kwargs):
 
     return data
 
+
 if __name__ == '__main__':
 
-    case = 'linear_fie'  # linear_fie, screening, morris_fie/morris_fie_fortran
-    analysis_type = 'oat'  # oat, oat_screening, morris_screening
+    case = 'linear_fie'  # linear_fie, ishigami, morris_fie/morris_fie_fortran
+    analysis_type = 'morris_screening'  # oat, oat_screening, morris_screening
 
     ##############################################
     # MODEL SETUP
     ##############################################
-    if case == 'screening':
+    if case == 'ishigami':
         # create the model
         model = un.Model(run=ishigami, labels=["x1", "x2", "x3"])
 
@@ -296,12 +310,13 @@ if __name__ == '__main__':
     ##############################################
     # UQ ANALYSIS
     ##############################################
-    data = UQ.quantify(method='custom', nr_samples_oat=1000, nr_of_morris_repetitions=100, seed=10)
+    data = UQ.quantify(method='custom', nr_samples_oat=1000, nr_of_morris_repetitions=200, linear_disturbance=True,
+                       linear_disturbance_factor=1E-9, seed=10)
 
 
 
-
-
+    # Comparison of PCE / Monte-Carlo / OAT
+    """
     mc_results = []
     pc_results = []
     oat_results = []
@@ -334,4 +349,4 @@ if __name__ == '__main__':
     ax.grid()
     ax.legend()
     plt.show()
-
+    """
