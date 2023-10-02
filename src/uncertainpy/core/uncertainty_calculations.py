@@ -623,8 +623,11 @@ class UncertaintyCalculations(ParameterBase):
         if nr_collocation_nodes is None:
             nr_collocation_nodes = 2*len(P) + 2
 
-        nodes = distribution.sample(nr_collocation_nodes, "M")
-
+        sampling_method = 'sobol'
+        if sampling_method == 'sobol':
+            nodes = distribution.sample(nr_collocation_nodes, "sobol")
+        elif sampling_method == 'hammersley':
+            nodes = distribution.sample(nr_collocation_nodes, "M")
 
         # Running the model
         data = self.runmodel.run(nodes, uncertain_parameters)
