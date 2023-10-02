@@ -533,7 +533,8 @@ class UncertaintyCalculations(ParameterBase):
                                uncertain_parameters=None,
                                polynomial_order=4,
                                nr_collocation_nodes=None,
-                               allow_incomplete=True):
+                               allow_incomplete=True,
+                               regression_model='least_squares'):
         """
         Create the polynomial approximation `U_hat` using pseudo-spectral
         projection.
@@ -634,6 +635,12 @@ class UncertaintyCalculations(ParameterBase):
 
         U_hat = {}
         # Calculate PC for each feature
+        try:
+            from sklearn import linear_model
+        except ImportError:
+            print('sklearn could not be imported. sklearn only exists for 64 bit python')
+            raise ImportError
+
         for feature in tqdm(data,
                             desc="Calculating PC for each feature",
                             total=len(data)):
@@ -643,20 +650,32 @@ class UncertaintyCalculations(ParameterBase):
             masked_evaluations, mask, masked_nodes = self.create_masked_nodes(data, feature, nodes)
 
             if (np.all(mask) or allow_incomplete) and sum(mask) > 0:
-                U_hat[feature] = cp.fit_regression(P, masked_nodes,
-                                                   masked_evaluations)
+                if regression_model == 'least_squares':
+                    model = linear_model.LinearRegression(fit_intercept=False)
+                elif regression_model == 'lasso':
+                    model = linear_model.Lasso(alpha=0.1, fit_intercept=False)
+                elif regression_model == 'lars':
+                    model = linear_model.Lars(fit_intercept=False)
+                elif regression_model == 'lasso_lars':
+                    model = linear_model.LassoLars(alpha=0.1, fit_intercept=False)
+                else:
+                    logger.warning("The demanded regression model for the PCE collocation is not known. A standard "
+                                   "Least-Squares regression model will be used instead.")
+                    model = linear_model.Lasso(alpha=0.1, fit_intercept=False)
+
+                U_hat[feature] = cp.fit_regression(P, masked_nodes, masked_evaluations, model=model)
                 data[feature].nodes = masked_nodes
                 if masked_nodes.ndim==1:
                     data[feature].evaluations_hat = U_hat[feature](*[masked_nodes])
                 else:
                     data[feature].evaluations_hat = U_hat[feature](*masked_nodes)
-                data[feature].evaluations_loo = self.leave_one_out_analysis(P, masked_nodes, masked_evaluations)
+                data[feature].evaluations_loo = self.leave_one_out_analysis(P, masked_nodes, masked_evaluations, model)
                 data[feature].RMSD_evaluations, data[feature].NRMSD_evaluations, \
                 data[feature].MAE_evaluations = self.compute_rmsd_nrmsd_mae(data[feature].evaluations_hat.T,
-                                                                            data[feature].evaluations)
+                                                                            masked_evaluations)
                 data[feature].RMSD_loo, data[feature].NRMSD_loo, \
                 data[feature].MAE_loo = self.compute_rmsd_nrmsd_mae(data[feature].evaluations_loo,
-                                                                    data[feature].evaluations)
+                                                                    masked_evaluations)
 
             elif not allow_incomplete:
                 logger.warning("{}: not all parameter combinations give results.".format(feature) +
@@ -671,7 +690,7 @@ class UncertaintyCalculations(ParameterBase):
 
         return U_hat, distribution, data
 
-    def leave_one_out_analysis(self, P, nodes, evaluations):
+    def leave_one_out_analysis(self, P, nodes, evaluations, model):
         """
         Leave-one-out analysis on evaluations for polynomial definition P
 
@@ -692,7 +711,7 @@ class UncertaintyCalculations(ParameterBase):
         for i, node in enumerate(nodes.T):
             loo_evaluations = evaluations[:i] + evaluations[i+1:]
             loo_nodes = np.delete(nodes, i, -1)
-            U_loo = cp.fit_regression(P, loo_nodes, loo_evaluations)
+            U_loo = cp.fit_regression(P, loo_nodes, loo_evaluations, model=model)
             if type(node)==float or type(node)==np.float64:
                 evaluations_loo.append(U_loo(*[node]))
             else:
@@ -1417,7 +1436,8 @@ class UncertaintyCalculations(ParameterBase):
                     self.create_PCE_collocation(uncertain_parameters=uncertain_parameters,
                                                 polynomial_order=polynomial_order,
                                                 nr_collocation_nodes=nr_collocation_nodes,
-                                                allow_incomplete=allow_incomplete)
+                                                allow_incomplete=allow_incomplete,
+                                                regression_model=custom_kwargs['pc_regression_model'])
 
         elif method == "spectral":
             if rosenblatt:
