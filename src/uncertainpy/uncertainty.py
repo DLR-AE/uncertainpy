@@ -455,13 +455,13 @@ class UncertaintyQuantification(ParameterBase):
 
 
         elif method.lower() == "custom":
-            data = self.custom_uncertainty_quantification(plot=plot,
-                                                          figure_folder=figure_folder,
-                                                          figureformat=figureformat,
-                                                          save=save,
-                                                          data_folder=data_folder,
-                                                          filename=filename,
-                                                          **custom_kwargs)
+            data, U_hat, distribution = self.custom_uncertainty_quantification(plot=plot,
+                                                                               figure_folder=figure_folder,
+                                                                               figureformat=figureformat,
+                                                                               save=save,
+                                                                               data_folder=data_folder,
+                                                                               filename=filename,
+                                                                               **custom_kwargs)
 
         else:
             raise ValueError("No method with name {}".format(method))
@@ -533,7 +533,7 @@ class UncertaintyQuantification(ParameterBase):
         uncertainpy.core.UncertaintyCalculations.custom_uncertainty_quantification : Requirements for custom_uncertainty_quantification
         """
 
-        self.data = self.uncertainty_calculations.custom_uncertainty_quantification(**custom_kwargs)
+        self.data, U_hat, distribution = self.uncertainty_calculations.custom_uncertainty_quantification(**custom_kwargs)
 
         self.data.backend = self.backend
 
@@ -548,7 +548,7 @@ class UncertaintyQuantification(ParameterBase):
                   folder=figure_folder,
                   figureformat=figureformat)
 
-        return self.data
+        return self.data, U_hat, distribution
 
 
     def polynomial_chaos(self,

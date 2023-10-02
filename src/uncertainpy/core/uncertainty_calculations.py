@@ -618,7 +618,7 @@ class UncertaintyCalculations(ParameterBase):
 
         distribution = self.create_distribution(uncertain_parameters=uncertain_parameters)
 
-        P = cp.orth_ttr(polynomial_order, distribution)
+        P = cp.expansion.stieltjes(polynomial_order, distribution)  #, normed=True)
         if nr_collocation_nodes is None:
             nr_collocation_nodes = 2*len(P) + 2
 
