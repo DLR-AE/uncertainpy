@@ -25,6 +25,12 @@ from .base import ParameterBase
 from .parallel import Parallel
 
 
+def init_pool_processes(the_lock):
+    '''Initialize each process with a global variable lock.
+    '''
+    global lock
+    lock = the_lock
+
 
 class RunModel(ParameterBase):
     """
@@ -449,13 +455,15 @@ class RunModel(ParameterBase):
 
         if self.CPUs:
             import multiprocess as mp
+            from multiprocess import Lock
 
-            pool = mp.Pool(processes=self.CPUs)
+            lock = Lock()
+            pool = mp.Pool(processes=self.CPUs, initializer=init_pool_processes, initargs=(lock,))
 
             # pool.map(self._parallel.run, model_parameters)
             # chunksize = int(np.ceil(len(model_parameters)/self.CPUs))
             chunksize = 1
-            for result in tqdm(pool.imap(self._parallel.run, model_parameters, chunksize),
+            for result in tqdm(pool.imap(self._parallel_run_wrapper, model_parameters, chunksize),
                                desc="Running model",
                                total=len(nodes.T)):
 
@@ -464,7 +472,8 @@ class RunModel(ParameterBase):
             pool.close()
 
         else:
-            for result in tqdm(imap(self._parallel.run, model_parameters),
+            init_pool_processes(None)
+            for result in tqdm(imap(self._parallel_run_wrapper, model_parameters),
                                desc="Running model",
                                total=len(nodes.T)):
 
@@ -477,7 +486,18 @@ class RunModel(ParameterBase):
 
         return results
 
+    def _parallel_run_wrapper(self, model_parameters):
+        """
+        Wrapper around the running method of the parallel instance. This is needed to access the global lock value
+        which only exists in this module (and which is defined when setting up the multiprocessing).
 
+        Parameters
+        ----------
+        model_parameters : dictionary
+            All model parameters as a dictionary. These parameters are sent to self._parallel.run which in turn
+            forwards them to model.run().
+        """
+        return self._parallel.run(model_parameters, lock)
 
     def create_model_parameters(self, nodes, uncertain_parameters):
         """

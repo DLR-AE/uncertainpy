@@ -219,13 +219,14 @@ class Model(object):
         raise NotImplementedError("No run method implemented or set in {class_name}".format(class_name=__name__))
 
 
-    def evaluate(self, **parameters):
+    def evaluate(self, mp_lock, **parameters):
         """
         Run the model with parameters and default model_kwargs options,
         and validate the result.
 
         Parameters
         ----------
+        mp_lock : multiprocess Lock instance
         **parameters : A number of named arguments (name=value).
             The parameters of the model. These parameters must be assigned to
             the model, either setting them with Python, or
@@ -253,6 +254,7 @@ class Model(object):
         """
         all_parameters = self.model_kwargs.copy()
         all_parameters.update(parameters)
+        all_parameters.update({'mp_lock': mp_lock})
 
         model_result = self.run(**all_parameters)
 
