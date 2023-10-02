@@ -364,6 +364,29 @@ class RunModel(ParameterBase):
                     for result in results:
                         data[feature].evaluations.append(result[feature]["values"])
 
+                    # pack all 'info' dictionaries together and add each key individually as list to data
+                    # TODO: this is only implemented here and not above for interpolated values
+                    if "info" in results[0][feature]:
+                        dummy = dict()
+                        for key in results[0][feature]["info"]:
+                            dummy[key] = []
+
+                        for result in results:
+                            for key in result[feature]["info"]:
+                                dummy[key].append(result[feature]["info"][key])
+
+                        for key in dummy:
+                            # saving a list of lists or a list of arrays does not work if the lists/arrays don't
+                            # have the same length
+                            if type(dummy[key][0]) is list:
+                                min_length = min([len(lst) for lst in dummy[key]])
+                                dummy[key] = [lst[:min_length] for lst in dummy[key]]
+                            elif type(dummy[key][0]) is np.ndarray:
+                                min_length = min([np.size(arr) for arr in dummy[key]])
+                                dummy[key] = [arr[:min_length] for arr in dummy[key]]
+
+                            data[feature].__setattr__(key, dummy[key])
+
         return data
 
 

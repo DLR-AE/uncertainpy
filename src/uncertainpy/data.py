@@ -706,7 +706,17 @@ class Data(collections.abc.MutableMapping):
                         evaluations_group = group.create_group(statistical_metric)
                         add_group(evaluations_group, self[feature][statistical_metric], name=statistical_metric)
                 else:
-                    group.create_dataset(statistical_metric, data=self[feature][statistical_metric])
+                    try:
+                        group.create_dataset(statistical_metric, data=self[feature][statistical_metric])
+                    except TypeError:
+                        if type(self[feature][statistical_metric][0]) is list or type(
+                                self[feature][statistical_metric][0]) is np.ndarray:
+                            group.create_dataset(statistical_metric, data=np.array(
+                                [[char_obj.encode("utf8") for char_obj in lst] for lst in
+                                 self[feature][statistical_metric]]))
+                        else:
+                            group.create_dataset(statistical_metric, data=np.array(
+                                [char_obj.encode("utf8") for char_obj in self[feature][statistical_metric]]))
 
             group.create_dataset("labels", data=np.array([label.encode("utf8") for label in self[feature].labels]))
 

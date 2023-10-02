@@ -310,9 +310,13 @@ class Parallel(Base):
             values_postprocess = none_to_nan(values_postprocess)
             time_postprocess = none_to_nan(time_postprocess)
 
-            results[self.model.name] = {"time": time_postprocess,
-                                        "values": values_postprocess}
-
+            if len(model_result) > 2:
+                results[self.model.name] = {"time": time_postprocess,
+                                            "values": values_postprocess,
+                                            "info": model_result[2]}
+            else:
+                results[self.model.name] = {"time": time_postprocess,
+                                            "values": values_postprocess}
 
         except Exception as error:
             print("")
