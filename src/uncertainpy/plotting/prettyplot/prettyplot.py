@@ -76,7 +76,7 @@ Set line style options
 
     params = {"lines.linewidth": linewidth,
               "lines.linestyle": "solid",
-              "lines.marker": None,
+              "lines.marker": '',
               "lines.antialiased": True,
               "lines.markersize": markersize,
               "lines.markeredgewidth": markeredgewidth,
