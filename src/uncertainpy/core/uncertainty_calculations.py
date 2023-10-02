@@ -673,6 +673,9 @@ class UncertaintyCalculations(ParameterBase):
                 else:
                     data[feature].evaluations_hat = U_hat[feature](*masked_nodes)
                 data[feature].evaluations_loo = self.leave_one_out_analysis(P, masked_nodes, masked_evaluations, model)  # nr_nodes_for_loo=100)
+                #data[feature].RMSD_loo_SUDRET = self.leave_one_out_analysis_SUDRET(P, masked_nodes,
+                #                                                                   masked_evaluations,
+                #                                                                   U_hat[feature](*masked_nodes))
                 data[feature].RMSD_evaluations, data[feature].NRMSD_evaluations, \
                 data[feature].MAE_evaluations = self.compute_rmsd_nrmsd_mae(data[feature].evaluations_hat.T,
                                                                             masked_evaluations)
@@ -720,6 +723,57 @@ class UncertaintyCalculations(ParameterBase):
             else:
                 evaluations_loo.append(U_loo(*node))
         return evaluations_loo
+
+    def leave_one_out_analysis_SUDRET(self, P, nodes, evaluations, evaluations_hat):
+        """
+        Computes leave one out error according to Bruno Sudret.
+        Once per definition -> recomputing PCE model
+        Once analytically
+
+        NOTE: This implementation is in no way optimal and is solely for verification purposes
+        """
+        experimental_matrix = np.zeros((nodes.shape[1], len(P)))
+        for inode, node in enumerate(nodes.T):
+            print('Node nr:', inode)
+            for ip, polynom in enumerate(P):
+                print('Polynom nr:', ip)
+                experimental_matrix[inode, ip] = polynom(q0=node[0], q1=node[1], q2=node[2], q3=node[3], q4=node[4], q5=node[5], q6=node[6])
+                """
+                try:
+                    polynom = polynom(q0=node[0])
+                except:
+                    pass
+                    # print('q0 not in polynom')
+                try:
+                    polynom = polynom(q1=node[1])
+                except:
+                    pass
+                    # print('q1 not in polynom')
+                try:
+                    polynom = polynom(q2=node[2])
+                except:
+                    pass
+                    # print('q2 not in polynom')
+                experimental_matrix[inode, ip] = polynom
+                """
+
+        hh = np.dot(np.dot(experimental_matrix, np.linalg.inv(np.dot(experimental_matrix.T, experimental_matrix))),
+                    experimental_matrix.T)
+
+        leave_one_out_error = 0
+        # loo_per_definition = 0
+        for i, node in enumerate(nodes.T):
+            leave_one_out_error += ((evaluations[i] - evaluations_hat[i]) / (1 - hh[i, i])) ** 2
+
+            # per definition -> requires recomputation PCE
+            # loo_evaluations = evaluations[:i] + evaluations[i + 1:]
+            # loo_nodes = np.concatenate((nodes[:, :i], nodes[:, i + 1:]), axis=1)
+            # U_loo = cp.fit_regression(P, loo_nodes, loo_evaluations)
+            # loo_per_definition += (evaluations[i] - U_loo(*node)) ** 2
+
+        leave_one_out_error = leave_one_out_error / nodes.shape[1]
+        # loo_per_definition = loo_per_definition / nodes.shape[1]
+        return np.sqrt(leave_one_out_error)  # , np.sqrt(loo_per_definition)
 
     def compute_rmsd_nrmsd_mae(self, y_est, y_true):
         """
