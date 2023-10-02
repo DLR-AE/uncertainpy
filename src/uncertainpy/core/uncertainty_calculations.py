@@ -672,13 +672,13 @@ class UncertaintyCalculations(ParameterBase):
                     data[feature].evaluations_hat = U_hat[feature](*[masked_nodes])
                 else:
                     data[feature].evaluations_hat = U_hat[feature](*masked_nodes)
-                data[feature].evaluations_loo = self.leave_one_out_analysis(P, masked_nodes, masked_evaluations, model)
+                data[feature].evaluations_loo = self.leave_one_out_analysis(P, masked_nodes, masked_evaluations, model)  # nr_nodes_for_loo=100)
                 data[feature].RMSD_evaluations, data[feature].NRMSD_evaluations, \
                 data[feature].MAE_evaluations = self.compute_rmsd_nrmsd_mae(data[feature].evaluations_hat.T,
                                                                             masked_evaluations)
                 data[feature].RMSD_loo, data[feature].NRMSD_loo, \
                 data[feature].MAE_loo = self.compute_rmsd_nrmsd_mae(data[feature].evaluations_loo,
-                                                                    masked_evaluations)
+                                                                    masked_evaluations)  # masked_evaluations[:nr_nodes_for_loo]
 
             elif not allow_incomplete:
                 logger.warning("{}: not all parameter combinations give results.".format(feature) +
@@ -693,7 +693,7 @@ class UncertaintyCalculations(ParameterBase):
 
         return U_hat, distribution, data
 
-    def leave_one_out_analysis(self, P, nodes, evaluations, model):
+    def leave_one_out_analysis(self, P, nodes, evaluations, model, nr_nodes_for_loo=None):
         """
         Leave-one-out analysis on evaluations for polynomial definition P
 
@@ -711,7 +711,7 @@ class UncertaintyCalculations(ParameterBase):
             Leave-one-out polynomial evaluations at nodes positions
         """
         evaluations_loo = []
-        for i, node in enumerate(nodes.T):
+        for i, node in enumerate(nodes[:, :nr_nodes_for_loo].T):
             loo_evaluations = evaluations[:i] + evaluations[i+1:]
             loo_nodes = np.delete(nodes, i, -1)
             U_loo = cp.fit_regression(P, loo_nodes, loo_evaluations, model=model)
