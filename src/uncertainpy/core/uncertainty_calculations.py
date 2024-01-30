@@ -620,7 +620,7 @@ class UncertaintyCalculations(ParameterBase):
 
         distribution = self.create_distribution(uncertain_parameters=uncertain_parameters)
 
-        P = cp.expansion.stieltjes(polynomial_order, distribution)  #, normed=True)
+        P = cp.expansion.stieltjes(polynomial_order, distribution, normed=True)
         if nr_collocation_nodes is None:
             nr_collocation_nodes = 2*len(P) + 2
 
@@ -653,6 +653,7 @@ class UncertaintyCalculations(ParameterBase):
                 continue
 
             masked_evaluations, mask, masked_nodes = self.create_masked_nodes(data, feature, nodes)
+            data[feature].masked_evaluations = masked_evaluations
 
             if (np.all(mask) or allow_incomplete) and sum(mask) > 0:
                 if regression_model == 'least_squares':
@@ -668,22 +669,39 @@ class UncertaintyCalculations(ParameterBase):
                                    "Least-Squares regression model will be used instead.")
                     model = linear_model.Lasso(alpha=0.1, fit_intercept=False)
 
-                U_hat[feature] = cp.fit_regression(P, masked_nodes, masked_evaluations, model=model)
+                U_hat[feature], uhat = cp.fit_regression(P, masked_nodes, masked_evaluations, retall=1, model=model)
+                data[feature].sobol_first_manual, data[feature].sobol_total_manual = self.sobol_computation_manual(P, uhat)
+                data[feature].variance_decomposed_isolated_nonlinear_effects = self.get_variance_decomposed_isolated_nonlinear_effects(P, uhat,
+                                                                                                                                       polynomial_order=polynomial_order,
+                                                                                                                                       n_params=len(P.indeterminants),
+                                                                                                                                       n_qoi=uhat.shape[1])
                 data[feature].nodes = masked_nodes
                 if masked_nodes.ndim==1:
                     data[feature].evaluations_hat = U_hat[feature](*[masked_nodes])
                 else:
                     data[feature].evaluations_hat = U_hat[feature](*masked_nodes)
-                data[feature].evaluations_loo = self.leave_one_out_analysis(P, masked_nodes, masked_evaluations, model)  # nr_nodes_for_loo=100)
-                #data[feature].RMSD_loo_SUDRET = self.leave_one_out_analysis_SUDRET(P, masked_nodes,
-                #                                                                   masked_evaluations,
-                #                                                                   U_hat[feature](*masked_nodes))
+
+                do_loo_analysis = True
+                if do_loo_analysis:
+                    # for large models the leave-one-out test can become expensive (new least-squares minimization for
+                    # each sampling point). Therefore limit the number of points for the loo test.
+                    nr_nodes_for_loo = 100
+                    print('Number nodes for LOO set to:', nr_nodes_for_loo)
+                    data[feature].evaluations_loo = self.leave_one_out_analysis(P, masked_nodes, masked_evaluations, model, nr_nodes_for_loo=nr_nodes_for_loo)
+                    # This implemenation of the leave-one-out algorithm similar to Sudret is very slow and gives the
+                    # same results.
+                    #########data[feature].RMSD_loo_SUDRET = self.leave_one_out_analysis_SUDRET(P, masked_nodes,
+                    #########                                                                   masked_evaluations,
+                    #########                                                                   U_hat[feature](*masked_nodes))
+                    data[feature].RMSD_loo, data[feature].NRMSD_loo, \
+                    data[feature].MAE_loo = self.compute_rmsd_nrmsd_mae(data[feature].evaluations_loo,
+                                                                        masked_evaluations[:nr_nodes_for_loo])
+                else:
+                    print('No LOO analysis')
+
                 data[feature].RMSD_evaluations, data[feature].NRMSD_evaluations, \
                 data[feature].MAE_evaluations = self.compute_rmsd_nrmsd_mae(data[feature].evaluations_hat.T,
                                                                             masked_evaluations)
-                data[feature].RMSD_loo, data[feature].NRMSD_loo, \
-                data[feature].MAE_loo = self.compute_rmsd_nrmsd_mae(data[feature].evaluations_loo,
-                                                                    masked_evaluations)  # masked_evaluations[:nr_nodes_for_loo]
 
             elif not allow_incomplete:
                 logger.warning("{}: not all parameter combinations give results.".format(feature) +
@@ -697,6 +715,86 @@ class UncertaintyCalculations(ParameterBase):
                 data.incomplete.append(feature)
 
         return U_hat, distribution, data
+
+    def sobol_computation_manual(self, P, uhat):
+        """
+        Compute Sobol indices solely based on polynomial coefficients
+
+        Parameters
+        ----------
+        P : chaospy polynomial object
+        uhat : polynomial coefficients
+
+        Returns
+        -------
+        sobol_first : first order sobol indices
+        sobol_total : total order sobol indices
+        """
+        # determine which polynomials depend on which indeterminants
+        first_order = dict()
+        total_order = dict()
+        total_variance = 0
+        for indet in P.indeterminants:
+            first_order[str(indet)] = []
+            total_order[str(indet)] = []
+
+        for iter, poly in enumerate(P):
+            if poly.isconstant():
+                # constant polynomials (f.ex. poly = 1.0, give poly.indeterminants = q0)
+                continue
+
+            total_variance += uhat[iter] ** 2
+
+            indeterminants_in_part_poly = [indet for indet, exponent_of_poly_part_in_poly in zip(poly.indeterminants, np.sum(poly.exponents, axis=0)) if exponent_of_poly_part_in_poly > 0]
+            for indet in indeterminants_in_part_poly:
+                if len(indeterminants_in_part_poly) == 1:
+                    first_order[str(indet)].append(iter)
+                total_order[str(indet)].append(iter)
+
+        first_order_output = []
+        total_order_output = []
+        for iter, indet in enumerate(P.indeterminants):
+            first_order_output.append(sum(uhat[first_order[str(indet)]] ** 2) / total_variance)
+            total_order_output.append(sum(uhat[total_order[str(indet)]] ** 2) / total_variance)
+        return first_order_output, total_order_output
+
+    def get_variance_decomposed_isolated_nonlinear_effects(self, P, uhat, polynomial_order, n_params, n_qoi):
+        """
+        Initial version -> not fully verified!
+
+        Get the decomposed first order (= isolated parameter) contribution for the different order terms (1st, 2nd, etc.)
+
+        Parameters
+        ----------
+        P : chaospy polynomial object
+        uhat : polynomial coefficients
+        polynomial_order : maximum order of the polynomial
+        n_params : number of uncertain parameters of the polynomial
+        n_qoi : number of quantities of interest
+
+        Returns
+        -------
+        decomposed_variance : array with decomposed variance
+        """
+        decomposed_variance = np.zeros((polynomial_order, n_params, n_qoi))
+
+        for iter, poly in enumerate(P):
+            if poly.isconstant():
+                # constant polynomials (f.ex. poly = 1.0, give poly.indeterminants = q0)
+                continue
+
+            max_exponents = np.max(poly.exponents, axis=0)
+            total_exponents = np.sum(poly.exponents, axis=0)
+
+            if np.count_nonzero(max_exponents) == 1:  # continue only if this term only contains one non-zero entry -> first order effect
+                param_idx = np.nonzero(max_exponents)[0][0]  # which of the uncertain parameter indices is it?
+                polynomial_order_idx = int(max_exponents[param_idx] - 1)  # which polynomial is it?
+                if not np.all(max_exponents == total_exponents):
+                    print('Polynomial term ', poly, ' is taken as a {} order term for the computation of nonlinear effects'.format(polynomial_order_idx+1))
+
+                decomposed_variance[polynomial_order_idx, param_idx, :] = uhat[iter, :]**2
+
+        return decomposed_variance
 
     def leave_one_out_analysis(self, P, nodes, evaluations, model, nr_nodes_for_loo=None):
         """
