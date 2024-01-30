@@ -534,6 +534,7 @@ class UncertaintyCalculations(ParameterBase):
                                polynomial_order=4,
                                nr_collocation_nodes=None,
                                allow_incomplete=True,
+                               sampling_method='sobol',
                                regression_model='least_squares'):
         """
         Create the polynomial approximation `U_hat` using pseudo-spectral
@@ -623,11 +624,12 @@ class UncertaintyCalculations(ParameterBase):
         if nr_collocation_nodes is None:
             nr_collocation_nodes = 2*len(P) + 2
 
-        sampling_method = 'sobol'
         if sampling_method == 'sobol':
             nodes = distribution.sample(nr_collocation_nodes, "sobol")
         elif sampling_method == 'hammersley':
             nodes = distribution.sample(nr_collocation_nodes, "M")
+        elif sampling_method == 'random':
+            nodes = distribution.sample(nr_collocation_nodes, "random", seed=1)
 
         # Running the model
         data = self.runmodel.run(nodes, uncertain_parameters)
@@ -1494,6 +1496,7 @@ class UncertaintyCalculations(ParameterBase):
                                                 polynomial_order=polynomial_order,
                                                 nr_collocation_nodes=nr_collocation_nodes,
                                                 allow_incomplete=allow_incomplete,
+                                                sampling_method=custom_kwargs['pc_sampling_method'],
                                                 regression_model=custom_kwargs['pc_regression_model'])
 
         elif method == "spectral":
